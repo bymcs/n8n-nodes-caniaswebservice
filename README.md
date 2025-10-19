@@ -1,6 +1,6 @@
-# Canias WebService n8n Node
+# CANIAS WebService n8n Node
 
-CANIAS IAS SOAP (Axis 1.4, rpc/encoded) servisine bağlanır. Dört operasyon sağlar:
+CANIAS ERP Web Servisine bağlanır. Dört operasyon sağlar:
 - login
 - listIASServices
 - callIASService
@@ -11,24 +11,10 @@ http://your-canias-server:8080/CaniasWS-v1/services/iasWebService?wsdl
 
 ## Kurulum
 
-1) Bağımlılıklar:
-```bash
-npm install
-```
-
-2) Derleme:
-```bash
-npm run build
-```
-
-3) n8n’e yükleme (seçenek 1: .tgz ile):
-```bash
-npm pack
-```
-n8n UI > Settings > Community Nodes > Install üzerinden oluşan .tgz dosyasını yükleyin.
-
-Alternatif (seçenek 2: npm’e publish edip UI’dan paket adını girin):  
-`@bymcs/n8n-nodes-caniaswebservice`
+1. n8n arayüzünde **Settings > Community Nodes > Install** bölümüne gidin
+2. Paket adını girin: `@bymcs/n8n-nodes-caniaswebservice`
+3. **Install** butonuna tıklayın
+4. n8n'i yeniden başlatın
 
 ## Kullanım
 
@@ -62,8 +48,17 @@ login -> listIASServices -> callIASService -> logout
 - callIASService.sessionid alanına expression ile: `{{$json.sessionId}}`
 
 ## Notlar
-- Axis 1.4 yanıtları genelde aşağıdaki alanlarla gelir:
-  - login: `{ loginReturn: "SESSIONID" }`
-  - callIASService: `{ callIASServiceReturn: ... }`
-  Node bu alanları otomatik açar.
-- Geliştirme/testte SSL doğrulama kapatma opsiyonu var; üretimde önerilmez.
+
+### SOAP Entegrasyonu
+- Bu node, CANIAS ERP'nin SOAP tabanlı IAS Web Servisi ile çalışır
+- WSDL üzerinden servis metodlarına erişim sağlar
+- SOAP 1.1 protokolü ile Axis 1.4 uyumlu yanıtlar döner
+
+### Yanıt Formatı
+- `login`: `{ loginReturn: "SESSIONID" }` şeklinde oturum kimliği döner
+- `callIASService`: `{ callIASServiceReturn: ... }` şeklinde servis yanıtı döner
+- Node, SOAP zarflarını otomatik olarak işler ve sonuç verisini açar
+
+### Güvenlik
+- Geliştirme/test ortamlarında SSL doğrulama kapatma seçeneği mevcuttur
+- Üretim ortamlarında SSL doğrulamanın açık tutulması önerilir
