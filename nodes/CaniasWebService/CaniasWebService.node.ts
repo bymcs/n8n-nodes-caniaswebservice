@@ -13,7 +13,7 @@ export class CaniasWebService implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Canias WebService',
 		name: 'caniasWebService',
-		icon: 'file:icons/canias.svg',
+		icon: { light: 'file:canias.svg', dark: 'file:canias.svg' },
 		group: ['transform'],
 		version: 1,
 		description: 'CANIAS IAS SOAP WebService: login, callIASService, logout',

@@ -1,6 +1,6 @@
 {
   "name": "@bymcs/n8n-nodes-caniaswebservice",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "n8n node for CANIAS IAS SOAP WebService (login, listIASServices, callIASService, logout)",
   "keywords": [
     "n8n-community-node-package",
@@ -15,19 +15,21 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "icons"
+    "dist"
   ],
   "scripts": {
-    "build": "n8n-node-dev build",
-    "dev": "n8n-node-dev build && n8n-node-dev watch"
+    "build": "n8n-node build",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix"
   },
   "dependencies": {
+    "n8n-workflow": "^1.113.0",
     "soap": "^0.45.0"
   },
   "devDependencies": {
+    "@n8n/node-cli": "^0.13.0",
     "@types/node": "^18.0.0",
-    "n8n-node-dev": "^1.114.0",
     "typescript": "^5.0.0"
   },
   "n8n": {
