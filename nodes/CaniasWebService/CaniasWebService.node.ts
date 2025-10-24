@@ -4,33 +4,97 @@ import {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
-	NodeOperationError,
 } from 'n8n-workflow';
 
-type CallArgsMode = 'rawString' | 'jsonString';
+import type {
+	CallArgsMode,
+	ICANIASClient,
+	ICallIASServiceResponse,
+	IListIASServicesResponse,
+	ILoginResponse,
+	IParsedListServicesResult,
+	IParsedLoginResult,
+	IParsedLogoutResult,
+	OperationType,
+} from './types';
+import { handleSOAPError, validateServiceId, validateSessionId } from './errorHandling';
+
+// ============================================================================
+// RESPONSE PARSING HELPERS
+// ============================================================================
+
+/**
+ * Parse login response (Axis 1.4 rpc/encoded format)
+ */
+function parseLoginResponse(res: ILoginResponse): IParsedLoginResult {
+	if (res && typeof res === 'object' && 'loginReturn' in res && res.loginReturn) {
+		return { sessionId: res.loginReturn };
+	}
+	// Fallback for direct string response
+	if (typeof res === 'string') {
+		return { sessionId: res as any };
+	}
+	// If no session ID found, something is wrong
+	throw new Error('Login failed: No session ID returned from server');
+}
+
+/**
+ * Parse list services response (Axis 1.4 rpc/encoded format)
+ */
+function parseListServicesResponse(res: IListIASServicesResponse): IParsedListServicesResult {
+	if (res && typeof res === 'object' && 'listIASServicesReturn' in res) {
+		return { services: res.listIASServicesReturn ?? [] };
+	}
+	// Fallback for direct array response
+	if (Array.isArray(res)) {
+		return { services: res };
+	}
+	return { services: [] };
+}
+
+/**
+ * Parse call service response (Axis 1.4 rpc/encoded format)
+ */
+function parseCallServiceResponse(res: ICallIASServiceResponse): any {
+	if (res && typeof res === 'object' && 'callIASServiceReturn' in res) {
+		return res.callIASServiceReturn;
+	}
+	// Return as-is for direct responses
+	return res;
+}
+
+/**
+ * Parse logout response
+ */
+function parseLogoutResponse(res: any): IParsedLogoutResult {
+	return {
+		success: true,
+		response: res ?? null,
+	};
+}
 
 export class CaniasWebService implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Canias WebService',
 		name: 'caniasWebService',
-		icon: { light: 'file:canias.svg', dark: 'file:canias.svg' },
+		icon: { light: 'file:canias.png', dark: 'file:canias.png' },
 		group: ['transform'],
 		version: 1,
+		subtitle: '={{$parameter["operation"]}}',
 		description: 'CANIAS IAS SOAP WebService: login, callIASService, logout',
 		defaults: {
 			name: 'Canias WebService',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
-		properties: [
+		credentials: [
 			{
-				displayName: 'WSDL URL',
-				name: 'wsdlUrl',
-				type: 'string',
-				default: 'http://your-canias-server:8080/CaniasWS-v1/services/iasWebService?wsdl',
+				name: 'caniasWebServiceApi',
 				required: true,
-				description: 'WSDL endpoint for the CANIAS IAS service',
 			},
+		],
+		usableAsTool: true,
+		properties: [
 			{
 				displayName: 'Endpoint Override',
 				name: 'endpoint',
@@ -51,65 +115,6 @@ export class CaniasWebService implements INodeType {
 				],
 				default: 'login',
 				required: true,
-			},
-
-			// login params
-			{
-				displayName: 'Client',
-				name: 'p_strClient',
-				type: 'string',
-				default: '00',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'Language',
-				name: 'p_strLanguage',
-				type: 'string',
-				default: 'T',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'DB Name',
-				name: 'p_strDBName',
-				type: 'string',
-				default: 'IAS803RDB',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'DB Server',
-				name: 'p_strDBServer',
-				type: 'string',
-				default: 'CANIAS',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'App Server',
-				name: 'p_strAppServer',
-				type: 'string',
-				default: 'your-canias-server:27499',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'Username',
-				name: 'p_strUserName',
-				type: 'string',
-				default: 'IASSETUP',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
-			},
-			{
-				displayName: 'Password',
-				name: 'p_strPassword',
-				type: 'string',
-				typeOptions: { password: true },
-				default: '',
-				required: true,
-				displayOptions: { show: { operation: ['login'] } },
 			},
 
 			// listIASServices params
@@ -235,87 +240,91 @@ export class CaniasWebService implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
+		// Get credentials once for all items
+		const credentials = await this.getCredentials('caniasWebServiceApi');
+
 		for (let i = 0; i < items.length; i++) {
+			const operation = this.getNodeParameter('operation', i) as OperationType;
+
 			try {
-				const wsdlUrl = this.getNodeParameter('wsdlUrl', i) as string;
+				const wsdlUrl = credentials.wsdlUrl as string;
 				const endpoint = this.getNodeParameter('endpoint', i, '') as string;
-				const operation = this.getNodeParameter('operation', i) as 'login' | 'listIASServices' | 'callIASService' | 'logout';
 				const returnFull = this.getNodeParameter('returnFull', i, false) as boolean;
 				const advanced = this.getNodeParameter('advanced', i, {}) as {
 					timeout?: number;
 					disableSslVerification?: boolean;
 				};
 
-				const clientOptions: Record<string, any> = {};
-				if (advanced?.timeout) clientOptions.timeout = advanced.timeout;
-				if (endpoint) clientOptions.endpoint = endpoint;
+				// Configure SOAP client options
+				const clientOptions: any = {};
+				if (advanced?.timeout) {
+					clientOptions.timeout = advanced.timeout;
+				}
+				if (endpoint) {
+					clientOptions.endpoint = endpoint;
+				}
 				if (advanced?.disableSslVerification) {
-					// Disable SSL verification for this request only
-					clientOptions.wsdl_options = { 
-						rejectUnauthorized: false 
+					// Disable SSL verification for self-signed certificates
+					clientOptions.wsdl_options = {
+						rejectUnauthorized: false,
 					};
-					clientOptions.request_options = { 
-						rejectUnauthorized: false 
+					clientOptions.request_options = {
+						rejectUnauthorized: false,
 					};
 				}
 
-				const client = await soap.createClientAsync(wsdlUrl, clientOptions);
+				// Create typed SOAP client
+				const client = (await soap.createClientAsync(wsdlUrl, clientOptions)) as ICANIASClient;
 
-				let result: any;
-				let rawResponse: any;
-				let soapHeaders: any;
+				// Execute operation and collect response
+				let result: IParsedLoginResult | IParsedListServicesResult | any | IParsedLogoutResult;
+				let rawResponse: string;
+				let soapHeaders: Record<string, any>;
 
 				if (operation === 'login') {
-					const p_strClient = this.getNodeParameter('p_strClient', i) as string;
-					const p_strLanguage = this.getNodeParameter('p_strLanguage', i) as string;
-					const p_strDBName = this.getNodeParameter('p_strDBName', i) as string;
-					const p_strDBServer = this.getNodeParameter('p_strDBServer', i) as string;
-					const p_strAppServer = this.getNodeParameter('p_strAppServer', i) as string;
-					const p_strUserName = this.getNodeParameter('p_strUserName', i) as string;
-					const p_strPassword = this.getNodeParameter('p_strPassword', i) as string;
-
-					const [res, raw, headers] = await (client as any).loginAsync({
-						p_strClient,
-						p_strLanguage,
-						p_strDBName,
-						p_strDBServer,
-						p_strAppServer,
-						p_strUserName,
-						p_strPassword,
+					// Login operation
+					const [res, raw, headers] = await client.loginAsync({
+						p_strClient: credentials.client as string,
+						p_strLanguage: credentials.language as string,
+						p_strDBName: credentials.dbName as string,
+						p_strDBServer: credentials.dbServer as string,
+						p_strAppServer: credentials.appServer as string,
+						p_strUserName: credentials.username as string,
+						p_strPassword: credentials.password as string,
 					});
 
 					rawResponse = raw;
 					soapHeaders = headers;
 
-					if (res && typeof res === 'object' && 'loginReturn' in res) {
-						result = { sessionId: (res as any).loginReturn };
-					} else if (typeof res === 'string') {
-						result = { sessionId: res };
-					} else {
-						result = res;
-					}
+					// Parse login response (Axis 1.4 rpc/encoded format)
+					result = parseLoginResponse(res);
 				} else if (operation === 'listIASServices') {
-					const p_strSessionId = this.getNodeParameter('listSessionId', i) as string;
+					// List IAS Services operation
+					const sessionId = this.getNodeParameter('listSessionId', i) as string;
+					validateSessionId(sessionId);
 
-					const [res, raw, headers] = await (client as any).listIASServicesAsync({
-						p_strSessionId,
+					const [res, raw, headers] = await client.listIASServicesAsync({
+						p_strSessionId: sessionId,
 					});
 
 					rawResponse = raw;
 					soapHeaders = headers;
 
-					if (res && typeof res === 'object' && 'listIASServicesReturn' in res) {
-						result = { services: (res as any).listIASServicesReturn };
-					} else {
-						result = res;
-					}
+					// Parse list services response
+					result = parseListServicesResponse(res);
 				} else if (operation === 'callIASService') {
-					const sessionid = this.getNodeParameter('sessionid', i) as string;
-					const serviceid = this.getNodeParameter('serviceid', i) as string;
+					// Call IAS Service operation
+					const sessionId = this.getNodeParameter('sessionid', i) as string;
+					const serviceId = this.getNodeParameter('serviceid', i) as string;
 					const returntype = this.getNodeParameter('returntype', i) as string;
 					const permanent = this.getNodeParameter('permanent', i) as boolean;
 					const argsMode = this.getNodeParameter('argsMode', i) as CallArgsMode;
 
+					// Validate inputs
+					validateSessionId(sessionId);
+					validateServiceId(serviceId);
+
+					// Prepare args parameter
 					let args: string;
 					if (argsMode === 'jsonString') {
 						const argsJson = this.getNodeParameter('argsJson', i, {}) as object;
@@ -324,9 +333,9 @@ export class CaniasWebService implements INodeType {
 						args = this.getNodeParameter('argsRaw', i, '') as string;
 					}
 
-					const [res, raw, headers] = await (client as any).callIASServiceAsync({
-						sessionid,
-						serviceid,
+					const [res, raw, headers] = await client.callIASServiceAsync({
+						sessionid: sessionId,
+						serviceid: serviceId,
 						args,
 						returntype,
 						permanent,
@@ -335,28 +344,28 @@ export class CaniasWebService implements INodeType {
 					rawResponse = raw;
 					soapHeaders = headers;
 
-					if (res && typeof res === 'object' && 'callIASServiceReturn' in res) {
-						result = (res as any).callIASServiceReturn;
-					} else {
-						result = res;
-					}
+					// Parse call service response
+					result = parseCallServiceResponse(res);
 				} else if (operation === 'logout') {
-					const p_strSessionId = this.getNodeParameter('p_strSessionId', i) as string;
+					// Logout operation
+					const sessionId = this.getNodeParameter('p_strSessionId', i) as string;
+					validateSessionId(sessionId);
 
-					const [res, raw, headers] = await (client as any).logoutAsync({
-						p_strSessionId,
+					const [res, raw, headers] = await client.logoutAsync({
+						p_strSessionId: sessionId,
 					});
 
 					rawResponse = raw;
 					soapHeaders = headers;
 
-					result = { success: true, response: res ?? null };
+					// Parse logout response
+					result = parseLogoutResponse(res);
 				} else {
-					throw new NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`, {
-						itemIndex: i,
-					});
+					// This should never happen due to TypeScript types, but added for safety
+					throw new Error(`Unsupported operation: ${operation}`);
 				}
 
+				// Prepare output based on returnFull setting
 				if (returnFull) {
 					returnData.push({
 						json: {
@@ -366,6 +375,7 @@ export class CaniasWebService implements INodeType {
 						},
 					});
 				} else {
+					// Return clean result
 					if (['string', 'number', 'boolean'].includes(typeof result)) {
 						returnData.push({ json: { data: result } });
 					} else {
@@ -373,9 +383,8 @@ export class CaniasWebService implements INodeType {
 					}
 				}
 			} catch (error) {
-				throw new NodeOperationError(this.getNode(), (error as Error).message, {
-					itemIndex: i,
-				});
+				// Enhanced error handling with SOAP fault parsing
+				handleSOAPError(error, this.getNode(), i, operation);
 			}
 		}
 

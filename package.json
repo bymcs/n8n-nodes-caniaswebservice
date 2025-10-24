@@ -1,6 +1,6 @@
 {
   "name": "@bymcs/n8n-nodes-caniaswebservice",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "n8n node for CANIAS IAS SOAP WebService (login, listIASServices, callIASService, logout)",
   "keywords": [
     "n8n-community-node-package",
@@ -36,7 +36,9 @@
     "nodes": [
       "dist/nodes/CaniasWebService/CaniasWebService.node.js"
     ],
-    "credentials": []
+    "credentials": [
+      "dist/credentials/CaniasWebServiceApi.credentials.js"
+    ]
   },
   "engines": {
     "node": ">=18.0.0"
