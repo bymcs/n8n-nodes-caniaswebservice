@@ -117,6 +117,72 @@ export class CaniasWebService implements INodeType {
 				required: true,
 			},
 
+			// login params - optional overrides (useful when multiple DBs/servers exist)
+			{
+				displayName: 'Client Override',
+				name: 'clientOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the Client number from credentials',
+			},
+			{
+				displayName: 'Language Override',
+				name: 'languageOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the Language from credentials',
+			},
+			{
+				displayName: 'DB Name Override',
+				name: 'dbNameOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the DB Name from credentials (useful with multiple databases)',
+			},
+			{
+				displayName: 'DB Server Override',
+				name: 'dbServerOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the DB Server from credentials',
+			},
+			{
+				displayName: 'App Server Override',
+				name: 'appServerOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the App Server from credentials (useful with multiple web services)',
+			},
+			{
+				displayName: 'Username Override',
+				name: 'usernameOverride',
+				type: 'string',
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the Username from credentials',
+			},
+			{
+				displayName: 'Password Override',
+				name: 'passwordOverride',
+				type: 'string',
+				typeOptions: { password: true },
+				default: '',
+				placeholder: 'Leave empty to use credential default',
+				displayOptions: { show: { operation: ['login'] } },
+				description: 'Optional. Override the Password from credentials',
+			},
+
 			// listIASServices params
 			{
 				displayName: 'Session ID',
@@ -282,15 +348,33 @@ export class CaniasWebService implements INodeType {
 				let soapHeaders: Record<string, any>;
 
 				if (operation === 'login') {
-					// Login operation
+					// Login operation with optional parameter overrides
+					// Get all override parameters
+					const clientOverride = this.getNodeParameter('clientOverride', i, '') as string;
+					const languageOverride = this.getNodeParameter('languageOverride', i, '') as string;
+					const dbNameOverride = this.getNodeParameter('dbNameOverride', i, '') as string;
+					const dbServerOverride = this.getNodeParameter('dbServerOverride', i, '') as string;
+					const appServerOverride = this.getNodeParameter('appServerOverride', i, '') as string;
+					const usernameOverride = this.getNodeParameter('usernameOverride', i, '') as string;
+					const passwordOverride = this.getNodeParameter('passwordOverride', i, '') as string;
+
+					// Use override if provided, otherwise use credential default
+					const p_strClient = clientOverride.trim() !== '' ? clientOverride : (credentials.client as string);
+					const p_strLanguage = languageOverride.trim() !== '' ? languageOverride : (credentials.language as string);
+					const p_strDBName = dbNameOverride.trim() !== '' ? dbNameOverride : (credentials.dbName as string);
+					const p_strDBServer = dbServerOverride.trim() !== '' ? dbServerOverride : (credentials.dbServer as string);
+					const p_strAppServer = appServerOverride.trim() !== '' ? appServerOverride : (credentials.appServer as string);
+					const p_strUserName = usernameOverride.trim() !== '' ? usernameOverride : (credentials.username as string);
+					const p_strPassword = passwordOverride.trim() !== '' ? passwordOverride : (credentials.password as string);
+
 					const [res, raw, headers] = await client.loginAsync({
-						p_strClient: credentials.client as string,
-						p_strLanguage: credentials.language as string,
-						p_strDBName: credentials.dbName as string,
-						p_strDBServer: credentials.dbServer as string,
-						p_strAppServer: credentials.appServer as string,
-						p_strUserName: credentials.username as string,
-						p_strPassword: credentials.password as string,
+						p_strClient,
+						p_strLanguage,
+						p_strDBName,
+						p_strDBServer,
+						p_strAppServer,
+						p_strUserName,
+						p_strPassword,
 					});
 
 					rawResponse = raw;
