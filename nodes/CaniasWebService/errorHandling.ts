@@ -180,18 +180,19 @@ export function handleSOAPError(
 }
 
 /**
- * Validate session ID format
+ * Validate session ID
+ *
+ * @param sessionId - The session ID to validate
+ * @throws Error if session ID is empty or too long
  */
 export function validateSessionId(sessionId: string): void {
 	if (!sessionId || sessionId.trim() === '') {
 		throw new Error('Session ID is required and cannot be empty');
 	}
 
-	// Basic validation - session IDs should be alphanumeric with possible dashes/underscores
-	if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) {
-		throw new Error(
-			'Invalid session ID format. Session ID should contain only letters, numbers, dashes, and underscores',
-		);
+	// Security: Prevent excessively long session IDs
+	if (sessionId.length > 500) {
+		throw new Error('Session ID is too long. Maximum length is 500 characters.');
 	}
 }
 
